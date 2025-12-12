@@ -1,0 +1,68 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    container_name: trello-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: yourpassword
+      POSTGRES_DB: trello_db
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: trello-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '8080:80'
+    depends_on:
+      - db
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: trello-backend
+    env_file:
+      - ./backend/.env
+    ports:
+      # Host 5000 is in use on macOS; map backend to 5001 on host instead
+      - '5001:5000'
+    depends_on:
+      - db
+    # Run backend inside its image (no bind-mount). This is image-only (more production-like).
+    restart: unless-stopped
+    environment:
+        - NODE_ENV=production
+        - DB_HOST=db
+        - DB_PORT=5432
+        - DB_NAME=trello_db
+        - DB_USER=postgres
+        - DB_PASSWORD=yourpassword
+        - PORT=5000
+    command: sh -c "npm ci && npm run migrate && npm run start"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: trello-frontend
+    ports:
+      - '5173:5173'
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
+    # Do not run `npm ci` here; Dockerfile already runs `npm install` during build.
+    command: sh -c "npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - backend
+
+volumes:
+  db-data:
