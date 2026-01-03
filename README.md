@@ -18,6 +18,12 @@ Tai mini Trello tipo projektų valdymo sistema, skirta komandos projektams ir u�
 - **Axios** - HTTP klientas
 - **React Router** - Navifacija
 
+## 🏗 Architektūra
+- **Docker Compose servisai:** `db` (Postgres), `pgadmin`, `backend` (Node/Express), `frontend` (Vite/React).
+- **Backend:** Express REST API, JWT auth, audit logs, roles (projects + teams), kanban lentos ir užduotys (drag & drop), komentarai.
+- **Duomenų bazė:** Postgres schema su users/projects/teams/boards/tasks/comments/audit_logs (FK ryšiai, indeksai).
+- **Frontend:** React SPA, kalbasi su API per `VITE_API_URL` (host naršyklė -> backend 5001), DnD UI kanbanui.
+
 ## 📁 Projekto struktūra
 
 ```
@@ -70,6 +76,17 @@ kursinis/
 - **audit_logs** - Veiklos žurnalas (visų akcijų registracija)
 
 ## 🚀 Paleidimas
+
+### Greitas startas su Docker Compose
+```bash
+# 1) Paleiskite visus servisus (db, backend, frontend, pgadmin)
+docker-compose up -d --build
+
+# 2) Patikrinkite, kad veikia:
+# Backend: http://localhost:5001/api/health
+# Frontend: http://localhost:5173
+# pgAdmin:  http://localhost:8080 (admin@example.com / admin)
+```
 
 ### 1. PostgreSQL duomenų bazės nustatymas
 ```bash
@@ -135,6 +152,16 @@ npm run dev
 
 Serveris bus paleistas: `http://localhost:5000`
 
+### Env kintamieji
+- **backend/.env** (kopijuokite iš .env.example):
+  - `PORT=5000` (Compose map: 5001:5000)
+  - `DB_HOST=db` (Compose) arba `localhost` jei backend lokalus prieš Compose DB
+  - `DB_PORT=5432`, `DB_NAME=trello_db`, `DB_USER=postgres`, `DB_PASSWORD=yourpassword`
+  - `JWT_SECRET=...`, `JWT_EXPIRE=7d`
+  - `FRONTEND_URL=http://localhost:5173`
+- **frontend/.env**:
+  - `VITE_API_URL=http://localhost:5001/api` (naršyklė -> backend per host portą)
+
 ### 3. Frontend nustatymas
 ```bash
 cd frontend
@@ -145,6 +172,21 @@ npm run dev
 ```
 
 Frontend bus paleistas: `http://localhost:5173`
+
+### Testai (auth / team permissions)
+```bash
+cd backend
+# Register
+npm run test:auth:register
+# Login
+npm run test:auth:login
+# Unauthorized (tikrinamas 401)
+npm run test:auth:unauthorized
+# Team permissions (non-member 403)
+npm run test:team:permissions
+# Team member vs owner (narys vs kūrėjas)
+npm run test:team:member-vs-owner
+```
 
 ## 🔌 REST API Endpointai
 

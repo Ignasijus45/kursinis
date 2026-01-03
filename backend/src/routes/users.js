@@ -8,13 +8,22 @@ import { logAudit } from '../utils/audit.js';
 
 const router = express.Router();
 
-// Registracija
-router.post('/register', async (req, res) => {
+// Shared registracijos handleris (naudojamas /api/users/register ir /api/auth/register)
+async function registerUserHandler(req, res) {
   try {
     const { email, username, password, full_name } = req.body;
     
     if (!email || !username || !password) {
       return res.status(400).json({ message: 'Privalomi laukai: email, username, password' });
+    }
+
+    // Paprasta email validacija ir slaptažodžio ilgio tikrinimas
+    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: 'Neteisingas el. pašto formatas' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Slaptažodis turi būti bent 8 simbolių' });
     }
     
     const passwordHash = await bcrypt.hash(password, 10);
@@ -52,10 +61,13 @@ router.post('/register', async (req, res) => {
     }
     res.status(500).json({ message: 'Klaida registruojant naudotoją' });
   }
-});
+}
 
-// Prisijungimas
-router.post('/login', async (req, res) => {
+// Registracija (/api/users/register)
+router.post('/register', registerUserHandler);
+
+// Shared prisijungimo handleris (naudojamas /api/users/login ir /api/auth/login)
+async function loginUserHandler(req, res) {
   try {
     const { email, password } = req.body;
     
@@ -96,7 +108,10 @@ router.post('/login', async (req, res) => {
     console.error(error);
     res.status(500).json({ message: 'Klaida prisijungiant' });
   }
-});
+}
+
+// Prisijungimas (/api/users/login)
+router.post('/login', loginUserHandler);
 
 // Gauti naudotoją
 router.get('/:id', authMiddleware, async (req, res) => {
@@ -114,6 +129,26 @@ router.get('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Klaida gaunant naudotoją' });
+  }
+});
+
+// Gauti naudotoją pagal el. paštą
+router.get('/by-email/:email', authMiddleware, async (req, res) => {
+  try {
+    const { email } = req.params;
+    const result = await pool.query(
+      'SELECT id, email, username, full_name, avatar_url, created_at FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Naudotojas nerastas' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Klaida gaunant naudotoją pagal el. paštą' });
   }
 });
 
@@ -148,4 +183,5 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+export { registerUserHandler, loginUserHandler };
 export default router;

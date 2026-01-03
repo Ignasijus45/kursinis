@@ -65,7 +65,29 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
         baseQuery += ' ORDER BY position';
 
         const tasks = await pool.query(baseQuery, params);
-        return { ...board, tasks: tasks.rows };
+        const taskIds = tasks.rows.map((t) => t.id);
+        let commentsByTask = {};
+
+        if (taskIds.length > 0) {
+          const comments = await pool.query(
+            `SELECT c.*, u.username 
+             FROM comments c 
+             JOIN users u ON c.user_id = u.id
+             WHERE c.task_id = ANY($1::uuid[])
+             ORDER BY c.created_at`,
+            [taskIds]
+          );
+
+          comments.rows.forEach((c) => {
+            if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
+            commentsByTask[c.task_id].push(c);
+          });
+        }
+
+        return {
+          ...board,
+          tasks: tasks.rows.map((t) => ({ ...t, comments: commentsByTask[t.id] || [] }))
+        };
       })
     );
 
@@ -108,21 +130,98 @@ router.post('/board', authMiddleware, async (req, res) => {
   }
 });
 
+// Gauti konkrečios lentos užduotis (projektui arba komandai)
+router.get('/board/:boardId', authMiddleware, async (req, res) => {
+  const { boardId } = req.params;
+
+  try {
+    const boardResult = await pool.query(
+      'SELECT id, project_id, team_id FROM boards WHERE id = $1',
+      [boardId]
+    );
+    if (boardResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Lenta nerasta' });
+    }
+    const board = boardResult.rows[0];
+
+    if (board.project_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        [board.project_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Neturite prieigos prie šio projekto' });
+      }
+    }
+    if (board.team_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2',
+        [board.team_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Neturite prieigos prie šios komandos lentos' });
+      }
+    }
+
+    const tasks = await pool.query(
+      'SELECT * FROM tasks WHERE board_id = $1 ORDER BY position',
+      [boardId]
+    );
+
+    const taskIds = tasks.rows.map((t) => t.id);
+    let commentsByTask = {};
+    if (taskIds.length > 0) {
+      const comments = await pool.query(
+        `SELECT c.*, u.username 
+         FROM comments c 
+         JOIN users u ON c.user_id = u.id
+         WHERE c.task_id = ANY($1::uuid[])
+         ORDER BY c.created_at`,
+        [taskIds]
+      );
+      comments.rows.forEach((c) => {
+        if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = [];
+        commentsByTask[c.task_id].push(c);
+      });
+    }
+
+    const withComments = tasks.rows.map((t) => ({
+      ...t,
+      comments: commentsByTask[t.id] || []
+    }));
+
+    res.json(withComments);
+  } catch (error) {
+    console.error('Klaida gaunant lentos užduotis:', error);
+    res.status(500).json({ message: 'Klaida gaunant lentos užduotis' });
+  }
+});
+
 // Sukurti naują uždavinį
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { board_id, title, description, priority, assigned_to } = req.body;
+    const { board_id, title, description, priority, assigned_to, due_date, deadline } = req.body;
     
     if (!board_id || !title) {
       return res.status(400).json({ message: 'Lentos ID ir pavadinimas yra privalomi' });
     }
+
+    // Data validacija
+    const isValidDate = (val) => {
+      if (!val) return true;
+      const d = new Date(val);
+      return !isNaN(d.getTime());
+    };
+    if (!isValidDate(due_date) || !isValidDate(deadline)) {
+      return res.status(400).json({ message: 'Neteisingas datos formatas' });
+    }
     
     const id = uuidv4();
     const result = await pool.query(
-      `INSERT INTO tasks (id, board_id, title, description, priority, created_by, position) 
-       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COUNT(*) FROM tasks WHERE board_id = $2))
+      `INSERT INTO tasks (id, board_id, title, description, priority, created_by, position, due_date, deadline) 
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COUNT(*) FROM tasks WHERE board_id = $2), $7, $8)
        RETURNING *`,
-      [id, board_id, title, description, priority || 'medium', req.user.id]
+      [id, board_id, title, description, priority || 'medium', req.user.id, due_date || null, deadline || null]
     );
     
     if (assigned_to) {
@@ -178,7 +277,17 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // Atnaujinti uždavinį
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const { title, description, status, priority, assigned_to, due_date } = req.body;
+    const { title, description, status, priority, assigned_to, due_date, deadline } = req.body;
+
+    // Data validacija (ISO date strings or timestamps)
+    const isValidDate = (val) => {
+      if (!val) return true;
+      const d = new Date(val);
+      return !isNaN(d.getTime());
+    };
+    if (!isValidDate(due_date) || !isValidDate(deadline)) {
+      return res.status(400).json({ message: 'Neteisingas datos formatas' });
+    }
     
     const result = await pool.query(
       `UPDATE tasks 
@@ -188,10 +297,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
            priority = COALESCE($4, priority),
            assigned_to = COALESCE($5, assigned_to),
            due_date = COALESCE($6, due_date),
+           deadline = COALESCE($7, deadline),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
+       WHERE id = $8
        RETURNING *`,
-      [title, description, status, priority, assigned_to, due_date, req.params.id]
+      [title, description, status, priority, assigned_to, due_date, deadline, req.params.id]
     );
 
     // Audit
@@ -209,6 +319,79 @@ router.put('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Klaida atnaujinant uždavinį' });
+  }
+});
+
+// Drag & drop: atnaujinti uždavinio statusą/poziciją ir lentą
+router.patch('/:id/status', authMiddleware, async (req, res) => {
+  const { board_id, status, position } = req.body;
+
+  if (!board_id && status === undefined && position === undefined) {
+    return res.status(400).json({ message: 'Reikia board_id arba status/position' });
+  }
+
+  try {
+    // Gauti task ir jo board
+    const taskResult = await pool.query(
+      `SELECT t.id, t.board_id, b.project_id, b.team_id
+       FROM tasks t
+       JOIN boards b ON b.id = t.board_id
+       WHERE t.id = $1`,
+      [req.params.id]
+    );
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Uždavinys nerastas' });
+    }
+    const task = taskResult.rows[0];
+
+    // Prieigos tikrinimas: projektui - project_members, komandai - team owner
+    if (task.project_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        [task.project_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Jūs neturite prieigos prie projekto' });
+      }
+    }
+    if (task.team_id) {
+      const team = await pool.query('SELECT created_by FROM teams WHERE id = $1', [task.team_id]);
+      if (team.rows.length === 0 || team.rows[0].created_by !== req.user.id) {
+        return res.status(403).json({ message: 'Neturite prieigos prie šios komandos lentos' });
+      }
+    }
+
+    const newBoardId = board_id || task.board_id;
+    const newPosition =
+      position !== undefined && position !== null
+        ? position
+        : task.position;
+
+    const updated = await pool.query(
+      `UPDATE tasks
+       SET board_id = $1,
+           status = COALESCE($2, status),
+           position = $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
+       RETURNING *`,
+      [newBoardId, status, newPosition, req.params.id]
+    );
+
+    try {
+      await logAudit({
+        user_id: req.user.id,
+        action: 'move_task',
+        entity_type: 'task',
+        entity_id: req.params.id,
+        details: { from_board: task.board_id, to_board: newBoardId, status, position: newPosition }
+      });
+    } catch (e) { console.warn('Audit log failed', e); }
+
+    res.json(updated.rows[0]);
+  } catch (error) {
+    console.error('Klaida atnaujinant statusą:', error);
+    res.status(500).json({ message: 'Klaida atnaujinant statusą' });
   }
 });
 
@@ -278,6 +461,43 @@ router.post('/:id/comments', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Klaida pridedant komentarą' });
+  }
+});
+
+// Ištrinti komentarą
+router.delete('/:taskId/comments/:commentId', authMiddleware, async (req, res) => {
+  try {
+    const { taskId, commentId } = req.params;
+
+    const commentRes = await pool.query(
+      'SELECT id, task_id, user_id FROM comments WHERE id = $1 AND task_id = $2',
+      [commentId, taskId]
+    );
+
+    if (commentRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Komentaras nerastas' });
+    }
+
+    if (commentRes.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ message: 'Negalite ištrinti kito naudotojo komentaro' });
+    }
+
+    await pool.query('DELETE FROM comments WHERE id = $1', [commentId]);
+
+    try {
+      await logAudit({
+        user_id: req.user.id,
+        action: 'delete_comment',
+        entity_type: 'comment',
+        entity_id: commentId,
+        details: { task_id: taskId }
+      });
+    } catch (e) { console.warn('Audit log failed', e); }
+
+    res.json({ message: 'Komentaras ištrintas' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Klaida trinant komentarą' });
   }
 });
 

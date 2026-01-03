@@ -1,16 +1,9 @@
-import React, { useEffect } from 'react';
-import LoginForm from '../components/LoginForm';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import LoginForm from '../components/LoginForm';
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      navigate('/projects');
-    }
-  }, [navigate]);
 
   const handleSuccess = () => {
     navigate('/projects');
@@ -21,13 +14,13 @@ export default function LoginPage() {
       <div className="container">
         <div className="login-content">
           <h1>📋 Trello Valdymo Sistema</h1>
-          <LoginForm onSuccess={handleSuccess} showToggle={false} />
+          <LoginForm onSuccess={handleSuccess} mode="register" showToggle={false} />
           <button
             type="button"
             className="link-button"
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/login')}
           >
-            Nėra paskyros? Registruokis
+            Jau turite paskyrą? Prisijunkite
           </button>
         </div>
       </div>

@@ -40,6 +40,32 @@ CREATE TABLE IF NOT EXISTS projects (
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Teams lentelė
+CREATE TABLE IF NOT EXISTS teams (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_by UUID NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Team Members lentelė
+CREATE TABLE IF NOT EXISTS team_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  role VARCHAR(50) DEFAULT 'OWNER',
+  added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(team_id, user_id)
+);
+
+-- Užtikrinti pradinę rolę OWNER (jei lentelė jau egzistavo)
+ALTER TABLE IF EXISTS team_members ALTER COLUMN role SET DEFAULT 'OWNER';
+
 -- Project Members lentelė
 CREATE TABLE IF NOT EXISTS project_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,12 +81,14 @@ CREATE TABLE IF NOT EXISTS project_members (
 -- Boards lentelė
 CREATE TABLE IF NOT EXISTS boards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL,
+  project_id UUID,
+  team_id UUID,
   title VARCHAR(255) NOT NULL,
   position INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL
 );
 
 -- Tasks lentelė
@@ -74,6 +102,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority VARCHAR(50) DEFAULT 'medium',
   status VARCHAR(50) DEFAULT 'todo',
   due_date DATE,
+  deadline TIMESTAMP,
   created_by UUID NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -120,6 +149,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_projects_owner_id ON projects(owner_id);
+CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams(created_by);
+CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id);
+CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON project_members(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_boards_project_id ON boards(project_id);
@@ -127,6 +159,26 @@ CREATE INDEX IF NOT EXISTS idx_tasks_board_id ON tasks(board_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_task_id ON attachments(task_id);
+
+-- Idempotent column additions for existing schemas
+ALTER TABLE boards ADD COLUMN IF NOT EXISTS team_id UUID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_boards_team'
+  ) THEN
+    ALTER TABLE boards ADD CONSTRAINT fk_boards_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+-- Index for team_id added after column/constraint
+CREATE INDEX IF NOT EXISTS idx_boards_team_id ON boards(team_id);
+
+-- Leisti NULL project_id (lentoms be projekto)
+ALTER TABLE boards ALTER COLUMN project_id DROP NOT NULL;
+
+-- Add deadline to tasks (idempotent)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline TIMESTAMP;
 `;
 
 // Initialize database

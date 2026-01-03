@@ -8,7 +8,12 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/config/database.js",
-    "migrate:users": "node src/migrate_users.js"
+    "migrate:users": "node src/migrate_users.js",
+    "test:auth:register": "node tests/auth-register.test.js",
+    "test:auth:login": "node tests/auth-login.test.js",
+    "test:auth:unauthorized": "node tests/auth-unauthorized.test.js",
+    "test:team:permissions": "node tests/team-permissions.test.js",
+    "test:team:member-vs-owner": "node tests/team-member-vs-owner.test.js"
   },
   "keywords": ["trello", "projects", "tasks", "api"],
   "author": "",

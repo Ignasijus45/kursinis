@@ -16,7 +16,7 @@ services:
     image: dpage/pgadmin4
     container_name: trello-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@local
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
       - '8080:80'
@@ -57,7 +57,8 @@ services:
     ports:
       - '5173:5173'
     environment:
-      - CHOKIDAR_USEPOLLING=true
+      # Naršyklė iš hosto turi pasiekti backend per host porto žemėlapį
+      - VITE_API_URL=http://localhost:5001/api
     volumes:
       - ./frontend:/usr/src/app
       - /usr/src/app/node_modules

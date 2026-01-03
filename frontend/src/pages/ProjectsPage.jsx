@@ -1,15 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { projectService } from '../services';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { projectService, teamService } from '../services';
 import ProjectForm from '../components/ProjectForm';
 import ProjectBoard from '../components/ProjectBoard';
+import TeamForm from '../components/TeamForm';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
+  const [teams, setTeams] = useState(() => {
+    try {
+      const cached = localStorage.getItem('teams-cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedProject, setSelectedProject] = useState(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  // Persisted user info (if available) to show who is logged in
+  const currentUser = useMemo(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
-    fetchProjects();
+    Promise.all([fetchProjects(), fetchTeams()]).finally(() => setLoading(false));
   }, []);
 
   const fetchProjects = async () => {
@@ -18,8 +39,22 @@ export default function ProjectsPage() {
       setProjects(response.data);
     } catch (error) {
       console.error('Klaida gaunant projektus:', error);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const fetchTeams = async () => {
+    try {
+      const response = await teamService.getAll();
+      const list = response.data || [];
+      setTeams(list);
+      try {
+        localStorage.setItem('teams-cache', JSON.stringify(list));
+      } catch (e) {
+        console.warn('Nepavyko išsaugoti teams cache', e);
+      }
+    } catch (error) {
+      console.error('Klaida gaunant komandas:', error);
+      // Paliekame cache, jei toks yra, kad vartotojas matytų bent jau sukurtas komandas
     }
   };
 
@@ -27,15 +62,76 @@ export default function ProjectsPage() {
     fetchProjects();
   };
 
+  const handleTeamCreated = (team) => {
+    if (team?.id) {
+      setTeams((prev) => [team, ...prev.filter((t) => t.id !== team.id)]);
+      try {
+        const next = [team, ...teams.filter((t) => t.id !== team.id)];
+        localStorage.setItem('teams-cache', JSON.stringify(next));
+      } catch {}
+    }
+    fetchTeams();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
+
   if (loading) return <div>Kraunama...</div>;
 
   return (
     <div className="projects-page">
+      <div className="projects-header">
+        <div className="projects-header__title">
+          <span>📋 Projektų valdymas</span>
+          {currentUser?.email && <small>{currentUser.email}</small>}
+        </div>
+        <button className="logout-button" onClick={handleLogout}>
+          Atsijungti
+        </button>
+      </div>
       <div className="projects-container">
         <div className="projects-sidebar">
           <h2>Mano Projektai</h2>
           <ProjectForm onSuccess={handleProjectCreated} />
+          <TeamForm onSuccess={handleTeamCreated} />
           
+          <h3>Mano Komandos</h3>
+          <div className="projects-list">
+            {teams.map(team => (
+              <div
+                key={team.id}
+                className="project-item"
+                onClick={() => navigate(`/teams/${team.id}`)}
+              >
+                <span>{team.name}</span>
+                <button
+                  className="outline-button danger small-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const confirmed = window.confirm('Ar tikrai ištrinti komandą?');
+                    if (!confirmed) return;
+                    teamService.delete(team.id)
+                      .then(() => {
+                        setTeams((prev) => prev.filter((t) => t.id !== team.id));
+                        localStorage.setItem('teams-cache', JSON.stringify(teams.filter((t) => t.id !== team.id)));
+                      })
+                      .catch((err) => {
+                        console.error('Klaida trinant komandą:', err);
+                        alert(err.response?.data?.message || 'Nepavyko ištrinti komandos');
+                      });
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+            ))}
+            {teams.length === 0 && <div className="small muted">Komandų nėra</div>}
+          </div>
+
+          <h3>Mano Projektai</h3>
           <div className="projects-list">
             {projects.map(project => (
               <div
@@ -48,6 +144,27 @@ export default function ProjectsPage() {
                   style={{ backgroundColor: project.color }}
                 />
                 <span>{project.title}</span>
+                <button
+                  className="outline-button danger small-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const confirmed = window.confirm('Ar tikrai ištrinti projektą?');
+                    if (!confirmed) return;
+                    projectService.delete(project.id)
+                      .then(() => {
+                        setProjects((prev) => prev.filter((p) => p.id !== project.id));
+                        if (selectedProject?.id === project.id) {
+                          setSelectedProject(null);
+                        }
+                      })
+                      .catch((err) => {
+                        console.error('Klaida trinant projektą:', err);
+                        alert(err.response?.data?.message || 'Nepavyko ištrinti projekto');
+                      });
+                  }}
+                >
+                  🗑
+                </button>
               </div>
             ))}
           </div>
