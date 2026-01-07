@@ -6,7 +6,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test:login-flow": "node tests/login-flow.js",
+    "test:board-page": "node tests/board-page-renders.js",
+    "test:ui:no-create-board": "node tests/permission-ui-no-create-board.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

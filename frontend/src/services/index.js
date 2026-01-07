@@ -38,11 +38,11 @@ export const projectService = {
 };
 
 export const taskService = {
-  getByProject: (projectId) =>
-    api.get(`/tasks/project/${projectId}`),
+  getByProject: (projectId, params) =>
+    api.get(`/tasks/project/${projectId}`, { params }),
 
-  getByBoard: (boardId) =>
-    api.get(`/tasks/board/${boardId}`),
+  getByBoard: (boardId, params) =>
+    api.get(`/tasks/board/${boardId}`, { params }),
   
   getById: (id) =>
     api.get(`/tasks/${id}`),
@@ -55,6 +55,9 @@ export const taskService = {
   
   delete: (id) =>
     api.delete(`/tasks/${id}`),
+
+  archive: (id, archived = true) =>
+    api.patch(`/tasks/${id}/archive`, { archived }),
   
   addComment: (id, content) =>
     api.post(`/tasks/${id}/comments`, { content }),
@@ -71,8 +74,17 @@ export const taskService = {
   deleteBoard: (id) =>
     api.delete(`/columns/${id}`),
 
+  archiveBoard: (id, archived = true) =>
+    api.patch(`/columns/${id}/archive`, { archived }),
+
   move: (id, data) =>
-    api.patch(`/tasks/${id}/status`, data)
+    api.patch(`/tasks/${id}/status`, data),
+
+  exportBoard: (boardId) =>
+    api.get(`/export/board/${boardId}`),
+
+  importBoard: (data) =>
+    api.post('/export/board', data)
 };
 
 export const teamService = {
@@ -88,8 +100,8 @@ export const teamService = {
   removeMember: (teamId, userId) =>
     api.delete(`/teams/${teamId}/members/${userId}`),
 
-  getBoards: (teamId) =>
-    api.get(`/teams/${teamId}/boards`),
+  getBoards: (teamId, params) =>
+    api.get(`/teams/${teamId}/boards`, { params }),
 
   createColumn: (data) =>
     api.post('/columns', data),
@@ -104,4 +116,8 @@ export const auditService = {
 
   getByUser: (userId) =>
     api.get(`/audit/user/${userId}`)
+,
+
+  getByTeam: (teamId) =>
+    api.get(`/audit/team/${teamId}`)
 };

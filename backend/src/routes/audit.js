@@ -1,6 +1,7 @@
 import express from 'express';
 import { pool } from '../config/database.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { requireTeamMember } from '../middleware/team.js';
 
 const router = express.Router();
 
@@ -55,6 +56,41 @@ router.get('/user/:userId', authMiddleware, async (req, res) => {
     res.json(logs.rows);
   } catch (error) {
     console.error(error);
+    res.status(500).json({ message: 'Klaida gaunant audit žurnalą' });
+  }
+});
+
+// Get audit logs for a specific team (last 20 actions)
+router.get('/team/:teamId', authMiddleware, requireTeamMember, async (req, res) => {
+  const teamId = req.params.teamId;
+  try {
+    const logs = await pool.query(
+      `SELECT al.*, u.username, u.avatar_url
+       FROM audit_logs al
+       LEFT JOIN users u ON al.user_id = u.id
+       WHERE
+         -- tiesioginiai team veiksmai ar detalėse yra team_id
+         (al.entity_type = 'team' AND al.entity_id = $1)
+         OR (al.details->>'team_id') = $1
+         -- board veiksmai komandos lentose
+         OR (al.entity_type = 'board' AND al.entity_id IN (SELECT id FROM boards WHERE team_id = $1))
+         OR ((al.details->>'board_id')::uuid IN (SELECT id FROM boards WHERE team_id = $1))
+         -- task/komentarai susiję su komandos board'ais
+         OR (al.entity_type = 'task' AND (
+              (al.details->>'board_id')::uuid IN (SELECT id FROM boards WHERE team_id = $1)
+              OR al.entity_id IN (
+                SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.team_id = $1
+              )
+         ))
+         OR (al.entity_type = 'comment' AND (al.details->>'board_id')::uuid IN (SELECT id FROM boards WHERE team_id = $1))
+       ORDER BY al.created_at DESC
+       LIMIT 20`,
+      [teamId]
+    );
+
+    res.json(logs.rows);
+  } catch (error) {
+    console.error('Klaida gaunant komandos auditą:', error);
     res.status(500).json({ message: 'Klaida gaunant audit žurnalą' });
   }
 });

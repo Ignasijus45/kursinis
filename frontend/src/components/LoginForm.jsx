@@ -41,12 +41,14 @@ export default function LoginForm({ onSuccess, mode = 'login', showToggle = true
 
     try {
       const endpoint = isRegister ? 'register' : 'login';
-      const response = await userService[endpoint === 'register' ? 'register' : 'login'](
-        formData.email,
-        formData.password,
-        isRegister ? formData.username : undefined,
-        isRegister ? formData.full_name : undefined
-      );
+      const response = isRegister
+        ? await userService.register(
+            formData.email,
+            formData.username,
+            formData.password,
+            formData.full_name
+          )
+        : await userService.login(formData.email, formData.password);
 
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));

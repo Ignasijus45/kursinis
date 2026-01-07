@@ -14,6 +14,12 @@ router.post('/', authMiddleware, async (req, res) => {
     if (!title) {
       return res.status(400).json({ message: 'Projekto pavadinimas yra privalomas' });
     }
+
+    // Užtikrinti, kad vartotojas egzistuoja (apsaugoti nuo pasenusių tokenų)
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [req.user.id]);
+    if (userCheck.rows.length === 0) {
+      return res.status(401).json({ message: 'Vartotojas nebegalioja (token pasenęs)' });
+    }
     
     const id = uuidv4();
     const result = await pool.query(

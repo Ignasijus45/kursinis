@@ -32,9 +32,19 @@ router.post('/', authMiddleware, async (req, res) => {
   if (!name || !name.trim()) {
     return res.status(400).json({ message: 'Pavadinimas privalomas' });
   }
+  if (name.trim().length > 255) {
+    return res.status(400).json({ message: 'Pavadinimas per ilgas (maks. 255 simbolių)' });
+  }
 
   const client = await pool.connect();
   try {
+    // User validation (apsauga nuo pasenusių tokenų)
+    const userCheck = await client.query('SELECT id FROM users WHERE id = $1', [req.user.id]);
+    if (userCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(401).json({ message: 'Vartotojas nebegalioja (token pasenęs)' });
+    }
+
     await client.query('BEGIN');
 
     const teamResult = await client.query(
@@ -288,11 +298,12 @@ router.delete('/:id/members/:userId', authMiddleware, requireTeamOwner, async (r
 // Gauti komandos lentas
 router.get('/:id/boards', authMiddleware, requireTeamMember, async (req, res) => {
   const teamId = req.params.id;
+  const includeArchived = req.query.include_archived === 'true';
   try {
     const boards = await pool.query(
-      `SELECT id, project_id, team_id, title, position, created_at, updated_at
+      `SELECT id, project_id, team_id, title, position, created_at, updated_at, archived
        FROM boards
-       WHERE team_id = $1
+       WHERE team_id = $1 ${includeArchived ? '' : 'AND archived = false'}
        ORDER BY position`,
       [teamId]
     );
@@ -305,20 +316,23 @@ router.get('/:id/boards', authMiddleware, requireTeamMember, async (req, res) =>
 
 // Sukurti komandai lentą
 router.post('/:id/boards', authMiddleware, requireTeamOwner, async (req, res) => {
-  const teamId = req.params.id;
-  const { title } = req.body;
+    const teamId = req.params.id;
+    const { title, wip_limit } = req.body;
 
   if (!title || !title.trim()) {
     return res.status(400).json({ message: 'Pavadinimas privalomas' });
+  }
+  if (title.trim().length > 255) {
+    return res.status(400).json({ message: 'Pavadinimas per ilgas (maks. 255 simbolių)' });
   }
 
   try {
     const id = uuidv4();
     const result = await pool.query(
-      `INSERT INTO boards (id, project_id, team_id, title, position)
-       VALUES ($1, NULL, $2, $3, (SELECT COUNT(*) FROM boards WHERE team_id = $2))
+      `INSERT INTO boards (id, project_id, team_id, title, position, wip_limit)
+       VALUES ($1, NULL, $2, $3, (SELECT COUNT(*) FROM boards WHERE team_id = $2), $4)
        RETURNING *`,
-      [id, teamId, title.trim()]
+      [id, teamId, title.trim(), wip_limit ?? null]
     );
 
     try {

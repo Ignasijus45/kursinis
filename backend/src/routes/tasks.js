@@ -9,6 +9,7 @@ const router = express.Router();
 // Gauti visas lentos ir uždavinius iš projekto (su filtro parama)
 router.get('/project/:projectId', authMiddleware, async (req, res) => {
   try {
+    const includeArchived = req.query.include_archived === 'true';
     // Tikrinti ar vartotojas turi prieigą prie projekto
     const access = await pool.query(
       `SELECT pm.* FROM project_members pm
@@ -22,7 +23,7 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
 
     // Gauti lentas
     const boards = await pool.query(
-      'SELECT * FROM boards WHERE project_id = $1 ORDER BY position',
+      `SELECT * FROM boards WHERE project_id = $1 ${includeArchived ? '' : 'AND archived = false'} ORDER BY position`,
       [req.params.projectId]
     );
 
@@ -33,6 +34,7 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
     const boardsWithTasks = await Promise.all(
       boards.rows.map(async (board) => {
         let baseQuery = 'SELECT * FROM tasks WHERE board_id = $1';
+        if (!includeArchived) baseQuery += ' AND archived = false';
         const params = [board.id];
         let idx = 2;
 
@@ -133,6 +135,7 @@ router.post('/board', authMiddleware, async (req, res) => {
 // Gauti konkrečios lentos užduotis (projektui arba komandai)
 router.get('/board/:boardId', authMiddleware, async (req, res) => {
   const { boardId } = req.params;
+  const includeArchived = req.query.include_archived === 'true';
 
   try {
     const boardResult = await pool.query(
@@ -164,7 +167,7 @@ router.get('/board/:boardId', authMiddleware, async (req, res) => {
     }
 
     const tasks = await pool.query(
-      'SELECT * FROM tasks WHERE board_id = $1 ORDER BY position',
+      `SELECT * FROM tasks WHERE board_id = $1 ${includeArchived ? '' : 'AND archived = false'} ORDER BY position`,
       [boardId]
     );
 
@@ -205,6 +208,9 @@ router.post('/', authMiddleware, async (req, res) => {
     if (!board_id || !title) {
       return res.status(400).json({ message: 'Lentos ID ir pavadinimas yra privalomi' });
     }
+    if (title.trim().length > 255) {
+      return res.status(400).json({ message: 'Pavadinimas per ilgas (maks. 255 simbolių)' });
+    }
 
     // Data validacija
     const isValidDate = (val) => {
@@ -212,14 +218,39 @@ router.post('/', authMiddleware, async (req, res) => {
       const d = new Date(val);
       return !isNaN(d.getTime());
     };
+    const isPast = (val) => {
+      if (!val) return false;
+      const d = new Date(val);
+      const now = Date.now();
+      return !isNaN(d.getTime()) && d.getTime() < now;
+    };
     if (!isValidDate(due_date) || !isValidDate(deadline)) {
       return res.status(400).json({ message: 'Neteisingas datos formatas' });
     }
+    if (isPast(due_date) || isPast(deadline)) {
+      return res.status(400).json({ message: 'Data negali būti praeityje' });
+    }
     
     const id = uuidv4();
+    // WIP limit check
+    const boardInfo = await pool.query('SELECT wip_limit FROM boards WHERE id = $1', [board_id]);
+    if (boardInfo.rows.length === 0) {
+      return res.status(404).json({ message: 'Lenta nerasta' });
+    }
+    const wipLimit = boardInfo.rows[0].wip_limit;
+    if (wipLimit !== null && wipLimit >= 0) {
+      const countActive = await pool.query(
+        'SELECT COUNT(*) FROM tasks WHERE board_id = $1 AND archived = false',
+        [board_id]
+      );
+      if (Number(countActive.rows[0].count) >= wipLimit) {
+        return res.status(400).json({ message: 'Viršytas WIP limitas šioje lentoje' });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO tasks (id, board_id, title, description, priority, created_by, position, due_date, deadline) 
-       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COUNT(*) FROM tasks WHERE board_id = $2), $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COUNT(*) FROM tasks WHERE board_id = $2 AND archived = false), $7, $8)
        RETURNING *`,
       [id, board_id, title, description, priority || 'medium', req.user.id, due_date || null, deadline || null]
     );
@@ -367,6 +398,22 @@ router.patch('/:id/status', authMiddleware, async (req, res) => {
         ? position
         : task.position;
 
+    // WIP limit check for destination board
+    const destBoard = await pool.query('SELECT wip_limit FROM boards WHERE id = $1', [newBoardId]);
+    if (destBoard.rows.length === 0) {
+      return res.status(404).json({ message: 'Lenta nerasta' });
+    }
+    const wipLimit = destBoard.rows[0].wip_limit;
+    if (wipLimit !== null && wipLimit >= 0) {
+      const countActive = await pool.query(
+        'SELECT COUNT(*) FROM tasks WHERE board_id = $1 AND archived = false AND id <> $2',
+        [newBoardId, req.params.id]
+      );
+      if (Number(countActive.rows[0].count) >= wipLimit) {
+        return res.status(400).json({ message: 'Viršytas WIP limitas šioje lentoje' });
+      }
+    }
+
     const updated = await pool.query(
       `UPDATE tasks
        SET board_id = $1,
@@ -431,6 +478,65 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+const archiveTaskHandler = async (req, res) => {
+  const { archived = true } = req.body;
+  try {
+    const taskRes = await pool.query(
+      `SELECT t.id, t.board_id, b.project_id, b.team_id, t.created_by
+       FROM tasks t
+       JOIN boards b ON b.id = t.board_id
+       WHERE t.id = $1`,
+      [req.params.id]
+    );
+    if (taskRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Uždavinys nerastas' });
+    }
+    const task = taskRes.rows[0];
+
+    // Prieigos tikrinimas
+    if (task.project_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        [task.project_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Jūs neturite prieigos prie projekto' });
+      }
+    }
+    if (task.team_id) {
+      const team = await pool.query('SELECT created_by FROM teams WHERE id = $1', [task.team_id]);
+      if (team.rows.length === 0 || team.rows[0].created_by !== req.user.id) {
+        return res.status(403).json({ message: 'Neturite prieigos prie šios komandos lentos' });
+      }
+    }
+
+    const updated = await pool.query(
+      'UPDATE tasks SET archived = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+      [archived, req.params.id]
+    );
+
+    try {
+      await logAudit({
+        user_id: req.user.id,
+        action: archived ? 'archive_task' : 'unarchive_task',
+        entity_type: 'task',
+        entity_id: req.params.id,
+        details: { board_id: task.board_id }
+      });
+    } catch (e) { console.warn('Audit log failed', e); }
+
+    res.json(updated.rows[0]);
+  } catch (error) {
+    console.error('Klaida archyvuojant uždavinį:', error);
+    res.status(500).json({ message: 'Klaida archyvuojant uždavinį' });
+  }
+};
+
+// Archyvuoti / atarchyvuoti uždavinį (soft delete)
+router.patch('/:id/archive', authMiddleware, archiveTaskHandler);
+// Alias (jei kreipiamasi /archive/:id)
+router.patch('/archive/:id', authMiddleware, archiveTaskHandler);
+
 // Pridėti komentarą prie uždavinio
 router.post('/:id/comments', authMiddleware, async (req, res) => {
   try {
@@ -438,6 +544,37 @@ router.post('/:id/comments', authMiddleware, async (req, res) => {
     
     if (!content) {
       return res.status(400).json({ message: 'Komentaro turinys yra privalomas' });
+    }
+
+    // Patikrinti ar vartotojas priklauso komandai/projektui
+    const taskRes = await pool.query(
+      `SELECT t.board_id, b.team_id, b.project_id
+       FROM tasks t
+       JOIN boards b ON b.id = t.board_id
+       WHERE t.id = $1`,
+      [req.params.id]
+    );
+    if (taskRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Uždavinys nerastas' });
+    }
+    const taskInfo = taskRes.rows[0];
+    if (taskInfo.project_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        [taskInfo.project_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Neturite prieigos prie šio projekto' });
+      }
+    }
+    if (taskInfo.team_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2',
+        [taskInfo.team_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Neturite prieigos prie šios komandos lentos' });
+      }
     }
     
     const id = uuidv4();

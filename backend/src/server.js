@@ -11,6 +11,7 @@ import auditRoutes from './routes/audit.js';
 import authRoutes from './routes/auth.js';
 import teamRoutes from './routes/teams.js';
 import columnRoutes from './routes/columns.js';
+import exportRoutes from './routes/export.js';
 
 dotenv.config();
 
@@ -48,6 +49,9 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/columns', columnRoutes);
+// Alias for boards (kad būtų pasiekiamas ir per /boards/... jei front klaidingai kreipiasi)
+app.use('/api/boards', columnRoutes);
+app.use('/api/export', exportRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

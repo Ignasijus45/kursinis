@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { teamService, taskService } from '../services';
 import Comments from './Comments';
+import ExportBoardButton from './ExportBoardButton';
+import ImportBoardForm from './ImportBoardForm';
 
 export default function ProjectBoard({ projectId, teamId, canManageBoards = true, incomingBoard }) {
   const [boards, setBoards] = useState([]);
@@ -21,42 +23,45 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
   const [boardDeleting, setBoardDeleting] = useState({});
   const [taskDeleting, setTaskDeleting] = useState({});
   const [taskDeleteErrors, setTaskDeleteErrors] = useState({});
+  const [taskArchiving, setTaskArchiving] = useState({});
+  const [boardArchiving, setBoardArchiving] = useState({});
+  const [showArchived, setShowArchived] = useState(false);
   const isTeamBoard = Boolean(teamId);
 
-  useEffect(() => {
-    const fetchTasks = async () => {
-      try {
-        if (isTeamBoard) {
-          const response = await teamService.getBoards(teamId);
-          const boardsWithTasks = await Promise.all(
-            (response.data || []).map(async (b) => {
-              try {
-                const taskRes = await taskService.getByBoard(b.id);
-                return { ...b, tasks: taskRes.data || [] };
-              } catch (err) {
-                console.error('Klaida gaunant komandos lentos užduotis:', err);
-                return { ...b, tasks: [] };
-              }
-            })
-          );
-          setBoards(boardsWithTasks);
-        } else {
-          const response = await taskService.getByProject(projectId);
-          const mapped = (response.data || []).map((b) => ({
-            ...b,
-            tasks: b.tasks || []
-          }));
-          setBoards(mapped);
-        }
-      } catch (error) {
-        console.error('Klaida gaunant uždavinius:', error);
-      } finally {
-        setLoading(false);
+  const fetchTasks = useCallback(async () => {
+    try {
+      if (isTeamBoard) {
+        const response = await teamService.getBoards(teamId, { include_archived: showArchived });
+        const boardsWithTasks = await Promise.all(
+          (response.data || []).map(async (b) => {
+            try {
+              const taskRes = await taskService.getByBoard(b.id, { include_archived: showArchived });
+              return { ...b, tasks: taskRes.data || [] };
+            } catch (err) {
+              console.error('Klaida gaunant komandos lentos užduotis:', err);
+              return { ...b, tasks: [] };
+            }
+          })
+        );
+        setBoards(boardsWithTasks);
+      } else {
+        const response = await taskService.getByProject(projectId, { include_archived: showArchived });
+        const mapped = (response.data || []).map((b) => ({
+          ...b,
+          tasks: b.tasks || []
+        }));
+        setBoards(mapped);
       }
-    };
+    } catch (error) {
+      console.error('Klaida gaunant uždavinius:', error);
+      setError('Nepavyko užkrauti lentų ir užduočių');
+    }
+  }, [isTeamBoard, teamId, projectId, showArchived]);
 
-    fetchTasks();
-  }, [projectId, teamId, isTeamBoard]);
+  useEffect(() => {
+    setLoading(true);
+    fetchTasks().finally(() => setLoading(false));
+  }, [fetchTasks]);
 
   // Įtraukti naujai sukurtą lentą nedelsiant (komandose kuria TeamPage)
   useEffect(() => {
@@ -101,6 +106,10 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
         position: destination.index
       }).catch((err) => {
         console.error('Nepavyko perkelti uždavinio:', err);
+        const message = err.response?.data?.message || 'Nepavyko perkelti uždavinio';
+        setError(message);
+        // Re-sync su serveriu, jei WIP limitas ar kita klaida
+        fetchTasks();
       });
 
       return updated;
@@ -152,6 +161,33 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
     }
   };
 
+  const handleTaskArchive = async (taskId, boardId, archived = true) => {
+    setTaskArchiving((prev) => ({ ...prev, [taskId]: true }));
+    setTaskDeleteErrors((prev) => ({ ...prev, [taskId]: null }));
+    try {
+      await taskService.archive(taskId, archived);
+      setBoards((prev) =>
+        prev.map((b) =>
+          b.id === boardId
+            ? {
+                ...b,
+                tasks: (b.tasks || []).map((t) =>
+                  t.id === taskId ? { ...t, archived } : t
+                )
+              }
+            : b
+        )
+      );
+    } catch (err) {
+      setTaskDeleteErrors((prev) => ({
+        ...prev,
+        [taskId]: err.response?.data?.message || 'Nepavyko archyvuoti užduoties'
+      }));
+    } finally {
+      setTaskArchiving((prev) => ({ ...prev, [taskId]: false }));
+    }
+  };
+
   const handleBoardDelete = async (boardId) => {
     if (isTeamBoard && !canManageBoards) {
       alert('Tik komandos savininkas gali ištrinti lentą');
@@ -171,6 +207,28 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
       }));
     } finally {
       setBoardDeleting((prev) => ({ ...prev, [boardId]: false }));
+    }
+  };
+
+  const handleBoardArchive = async (boardId, archived = true) => {
+    if (isTeamBoard && !canManageBoards) {
+      alert('Tik komandos savininkas gali archyvuoti lentą');
+      return;
+    }
+    setBoardArchiving((prev) => ({ ...prev, [boardId]: true }));
+    setBoardErrors((prev) => ({ ...prev, [boardId]: null }));
+    try {
+      await taskService.archiveBoard(boardId, archived);
+      setBoards((prev) =>
+        prev.map((b) => (b.id === boardId ? { ...b, archived } : b))
+      );
+    } catch (err) {
+      setBoardErrors((prev) => ({
+        ...prev,
+        [boardId]: err.response?.data?.message || 'Nepavyko archyvuoti lentos'
+      }));
+    } finally {
+      setBoardArchiving((prev) => ({ ...prev, [boardId]: false }));
     }
   };
 
@@ -249,10 +307,22 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
 
   if (loading) return <div>Kraunama...</div>;
 
+  const activeBoards = boards.filter((b) => !b.archived);
+  const archivedBoards = boards.filter((b) => b.archived);
+
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
       <div className="project-board">
         <h1>{isTeamBoard ? 'Komandos lentos' : 'Projektų lenta'}</h1>
+        <div className="board-actions-header">
+          <button
+            type="button"
+            className="outline-button"
+            onClick={() => setShowArchived((prev) => !prev)}
+          >
+            {showArchived ? 'Slėpti archyvuotus' : 'Rodyti archyvuotus'}
+          </button>
+        </div>
         {!isTeamBoard && (
           <form
             className="board-form"
@@ -288,12 +358,20 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
             </button>
           </form>
         )}
+        <ImportBoardForm
+          projectId={!isTeamBoard ? projectId : null}
+          teamId={isTeamBoard ? teamId : null}
+          onImported={(board) => board && fetchTasks()}
+        />
         {error && <div className="error-message">{error}</div>}
-        {boards.length === 0 ? (
+        {activeBoards.length === 0 ? (
           <p>Nėra lentų</p>
         ) : (
           <div className="boards-container">
-            {boards.map(board => (
+            {activeBoards.map(board => {
+              const activeTasks = (board.tasks || []).filter((t) => !t.archived);
+              const archivedTasks = (board.tasks || []).filter((t) => t.archived);
+              return (
               <Droppable droppableId={board.id} key={board.id}>
                 {(provided) => (
                   <div
@@ -321,6 +399,7 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
                             <button type="button" onClick={() => setEditingBoardId(null)}>
                               Atšaukti
                             </button>
+                            <ExportBoardButton boardId={board.id} />
                           </div>
                           {boardErrors[board.id] && (
                             <div className="error-message">{boardErrors[board.id]}</div>
@@ -343,15 +422,26 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
                             >
                               Redaguoti
                             </button>
+                            <ExportBoardButton boardId={board.id} />
                             {(!isTeamBoard || canManageBoards) && (
-                              <button
-                                type="button"
-                                className="outline-button danger"
-                                onClick={() => handleBoardDelete(board.id)}
-                                disabled={!!boardDeleting[board.id]}
-                              >
-                                {boardDeleting[board.id] ? 'Trinama...' : 'Ištrinti'}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="outline-button"
+                                  onClick={() => handleBoardArchive(board.id, true)}
+                                  disabled={!!boardArchiving[board.id]}
+                                >
+                                  {boardArchiving[board.id] ? 'Archyvuojama...' : 'Archyvuoti'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="outline-button danger"
+                                  onClick={() => handleBoardDelete(board.id)}
+                                  disabled={!!boardDeleting[board.id]}
+                                >
+                                  {boardDeleting[board.id] ? 'Trinama...' : 'Ištrinti'}
+                                </button>
+                              </>
                             )}
                           </div>
                         </>
@@ -392,7 +482,7 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
                 </button>
               </form>
               <div className="tasks-list">
-                {board.tasks?.map((task, index) => (
+                {activeTasks.map((task, index) => (
                   <Draggable key={task.id} draggableId={task.id} index={index}>
                     {(prov) => (
                       <div
@@ -477,6 +567,14 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
                               </button>
                               <button
                                 type="button"
+                                className="outline-button"
+                                onClick={() => handleTaskArchive(task.id, board.id, true)}
+                                disabled={!!taskArchiving[task.id]}
+                              >
+                                {taskArchiving[task.id] ? 'Archyvuojama...' : 'Archyvuoti'}
+                              </button>
+                              <button
+                                type="button"
                                 className="outline-button danger"
                                 onClick={() => handleTaskDelete(task.id, board.id)}
                                 disabled={!!taskDeleting[task.id]}
@@ -498,11 +596,57 @@ export default function ProjectBoard({ projectId, teamId, canManageBoards = true
                       {(!board.tasks || board.tasks.length === 0) && (
                         <p className="empty">Nėra užduočių</p>
                       )}
+                      {showArchived && archivedTasks.length > 0 && (
+                        <div className="archived-block">
+                          <h4>Archyvuotos užduotys</h4>
+                          <ul>
+                            {archivedTasks.map((task) => (
+                              <li key={task.id} className="archived-row">
+                                <span>{task.title}</span>
+                                <div className="archived-actions">
+                                  <button
+                                    type="button"
+                                    className="outline-button"
+                                    onClick={() => handleTaskArchive(task.id, board.id, false)}
+                                    disabled={!!taskArchiving[task.id]}
+                                  >
+                                    {taskArchiving[task.id] ? 'Atkuriama...' : 'Atkurti'}
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
               </Droppable>
-            ))}
+            );})}
+          </div>
+        )}
+        {showArchived && archivedBoards.length > 0 && (
+          <div className="archived-boards">
+            <h3>Archyvuotos lentos</h3>
+            <ul>
+              {archivedBoards.map((b) => (
+                <li key={b.id} className="archived-row">
+                  <span>{b.title}</span>
+                  <div className="archived-actions">
+                    {(!isTeamBoard || canManageBoards) && (
+                      <button
+                        type="button"
+                        className="outline-button"
+                        onClick={() => handleBoardArchive(b.id, false)}
+                        disabled={!!boardArchiving[b.id]}
+                      >
+                        {boardArchiving[b.id] ? 'Atkuriama...' : 'Atkurti lentą'}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

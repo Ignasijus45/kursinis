@@ -1718,7 +1718,93 @@ Projektas pradėtas nuo PostgreSQL integracijos, vėliau perėjo į Docker aplin
 **Statusas:**
 - Baigta; užduotis galima ištrinti tiek komandų, tiek asmeninėse lentose.
 
-## Klaidos ir Jų Priežastys
+# Naudotojo pranešti bugai (rasta testuojant)
+
+**B1. Projekto reload praranda pasirinktą projektą**
+- **Klaida:** Pasirinktas projektas buvo laikomas tik React state; atnaujinus puslapį state išsivalydavo, vartotojas grįždavo į tuščią vaizdą.
+- **Sprendimas:** `ProjectsPage` saugo `selectedProjectId` `localStorage`; po fetch atkuria, ištrinant projektą ID išvalomas.
+- **Laikas:** ~3 min. mąstymas, ~6 min. įgyvendinimas.
+- **Statusas:** Baigta.
+
+**B2. Docker build lūžta be package-lock**
+- **Klaida:** `npm ci` reikalavo lockfile, build krito.
+- **Sprendimas:** Compose pakeistas į `npm install`.
+- **Statusas:** Baigta.
+
+**B3. Port 5000 konfliktas**
+- **Klaida:** Backend 5000 užimtas macOS paslaugos.
+- **Sprendimas:** Portas pakeistas (5001/5002), API URL atnaujinti.
+- **Statusas:** Baigta.
+
+**B4. DB role 'postgres' trūksta**
+- **Klaida:** Migracijos krito „role 'postgres' does not exist“.
+- **Sprendimas:** Sukurtas vartotojas konteineryje per SQL.
+- **Statusas:** Baigta.
+
+**B5. CORS neveikė (sena image)**
+- **Klaida:** Netinkami CORS headeriai, naršyklė blokavo.
+- **Sprendimas:** Atnaujinti CORS ir rebuildinti backend image.
+- **Statusas:** Baigta.
+
+**B6. Lokalinis DB/port nesuderintas**
+- **Klaida:** DB prisijungimo klaidos + port konfliktas; prisijungti nesisekė, projektai/komandos neįsikraudavo.
+- **Sprendimas:** Sustabdytas vietinis postgres, suderintas .env slaptažodis, pakeistas backend port, atnaujintas frontend API URL.
+- **Statusas:** Baigta.
+
+**B7. Komandų/lentų kūrimas krito dėl NOT NULL/FK**
+- **Klaida:** `boards.project_id` buvo NOT NULL ir FK/Index DO blokas trukdė kurti komandines lentas; lentos/komandos neišsisaugodavo.
+- **Sprendimas:** `boards.project_id` padarytas nullable, sutvarkyti FK/indeksai; komandų lentos kuriamos be klaidų.
+- **Statusas:** Baigta.
+
+**B8. Frontend nematė backend (ERR_NAME_NOT_RESOLVED/CORS)**
+- **Klaida:** Naršyklė kreipėsi į `http://backend:5000/api`, gaudavo tinklo/CORS klaidas (negalėjo registruotis/prisijungti/sukurti).
+- **Sprendimas:** Teisingas `VITE_API_URL=http://localhost:5001/api`, cache išvalymas, frontend paleistas iš `frontend` katalogo; backend portas perkelta į 5001/5002.
+- **Statusas:** Baigta.
+
+**B9. Komentarai nerodomi po reload**
+- **Klaida:** Komentarai buvo tik kliento state, po puslapio perkrovimo jų nematyti.
+- **Sprendimas:** `Comments` komponentas užkrauna komentarus iš API (`taskService.getById`), rodo loading/klaidas.
+- **Statusas:** Baigta.
+
+**B10. DnD priklausomybė trūko (frontend nerenderino lentų)**
+- **Klaida:** Vite `Failed to resolve import "@hello-pangea/dnd"`, todėl lentos/užduotys nesi-rendino.
+- **Sprendimas:** Įdiegta priklausomybė konteineryje ir perbuildintas frontend.
+- **Statusas:** Baigta.
+
+**B11. DELETE /teams/:id grąžino 404 (export vieta faile)**
+- **Klaida:** `teams.js` faile `export default router` buvo viduryje, todėl vėlesni maršrutai (tarp jų DELETE) nebuvo pasiekiami, 404.
+- **Sprendimas:** Perkelta `export default router` į failo pabaigą; maršrutas pasiekiamas.
+- **Statusas:** Baigta.
+
+**B12. Backend konteineris nepaleistas/užstrigęs (5001 neklauso)**
+- **Klaida:** Testuojant CORS/tinklą, hoste 5001 porta niekas neklausė – backend konteineris nepaleistas arba užstrigęs, todėl front negalėjo prisijungti.
+- **Sprendimas:** Paleisti/atstatyti docker-compose (up -d), užtikrinti backend konteinerio startą; po starto 5001 porta klausosi ir front pasiekia API.
+- **Statusas:** Baigta.
+
+**B13. CORS/tinklo klaidos (neturi ryšio į backend)**
+- **Klaida:** Naršyklė gaudavo CORS/tinklo klaidas (ERR_NAME_NOT_RESOLVED/ERR_NETWORK); priežastys – blogas host/port (`backend:5000` vietoje `localhost:5001`), sena backend image be CORS headerių.
+- **Sprendimas:** Nustatyti `VITE_API_URL=http://localhost:5001/api`, perbuildinti backend su atnaujinta CORS konfigūracija, išvalyti cache, užtikrinti, kad backend konteineris veikia ant 5001.
+- **Statusas:** Baigta.
+
+**B14. Registracija siuntė POST į backend:5000 (neteisingas host)**
+- **Klaida:** Naršyklėje registracijos POST ėjo į `http://backend:5000/api/users/register`, todėl nei registracija, nei kiti veiksmai neveikė (host iš host OS nepasiekiamas).
+- **Sprendimas:** Frontend `.env` nustatytas į `http://localhost:5001/api`, perspėta dėl cache/perkrovimo, užtikrinta, kad front naudoja teisingą bazinį URL.
+- **Statusas:** Baigta.
+
+**B15. Archyvavimas neveikė (nei lentos, nei užduotys)**
+- **Klaida:** Archyvavimo funkcija neveikė – bandant archyvuoti lentą ar užduotį niekas nesikeitė (endpointų/logikos nebuvo).
+- **Sprendimas:** Backend pridėti `archived` laukai ir endpointai (`PATCH /columns/:id/archive`, `PATCH /tasks/:id/archive`) su prieigos tikrinimu; frontend `ProjectBoard` pridėti archyvavimo mygtukai ir rodoma „Archived“ skiltis. Sąrašai filtruoja `archived=false` ir leidžia atkurti.
+- **Statusas:** Baigta; archyvavimas/atkurimas veikia UI ir API.
+
+**B16. /columns/:id/archive grąžino 404 (maršruto alias)**
+- **Klaida:** Bandant archyvuoti lentą buvo gaunamas 404 (neradus maršruto arba neteisingo bazinio kelio).
+- **Sprendimas:** Užregistruotas papildomas alias `/api/boards/...` (`server.js`), kad archyvavimo maršrutas būtų pasiekiamas net jei front ar proxy kreipiasi per /boards; egzistuojantis `/api/columns/:id/archive` lieka galioti.
+- **Statusas:** Baigta.
+
+**B17. DB migracija krito dėl „archived“ indekso (schema nesukeliama)**
+- **Klaida:** Migracijos metu „column 'archived' does not exist“ – indeksai kurti prieš pridedant lauką, backend nepasileisdavo (projekto/komandos užklausos krito).
+- **Sprendimas:** Perkelti archyvavimo/WIP indeksų kūrimą po kolonų pridėjimo; perbuildintas backend, migracija praeina.
+- **Statusas:** Baigta.
 
 ### 1. Docker Build Klaidos
 **Klaida:** npm ci reikalavo package-lock.json, kuris neegzistavo.

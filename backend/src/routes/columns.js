@@ -8,10 +8,13 @@ const router = express.Router();
 
 // Sukurti naują stulpelį (board) projektui arba komandai
 router.post('/', authMiddleware, async (req, res) => {
-  const { project_id, team_id, title } = req.body;
+  const { project_id, team_id, title, wip_limit } = req.body;
 
   if (!title || !title.trim()) {
     return res.status(400).json({ message: 'Pavadinimas privalomas' });
+  }
+  if (title.trim().length > 255) {
+    return res.status(400).json({ message: 'Pavadinimas per ilgas (maks. 255 simbolių)' });
   }
   if (!project_id && !team_id) {
     return res.status(400).json({ message: 'Reikia project_id arba team_id' });
@@ -42,10 +45,10 @@ router.post('/', authMiddleware, async (req, res) => {
     const filterColumn = project_id ? 'project_id' : 'team_id';
     const filterValue = project_id || team_id;
     const result = await pool.query(
-      `INSERT INTO boards (id, project_id, team_id, title, position)
-       VALUES ($1, $2, $3, $4, (SELECT COUNT(*) FROM boards WHERE ${filterColumn} = $5))
+      `INSERT INTO boards (id, project_id, team_id, title, position, wip_limit)
+       VALUES ($1, $2, $3, $4, (SELECT COUNT(*) FROM boards WHERE ${filterColumn} = $5), $6)
        RETURNING *`,
-      [id, project_id || null, team_id || null, title.trim(), filterValue]
+      [id, project_id || null, team_id || null, title.trim(), filterValue, wip_limit ?? null]
     );
 
     try {
@@ -69,7 +72,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
 // Atnaujinti stulpelį (pavadinimą arba poziciją)
 router.put('/:id', authMiddleware, async (req, res) => {
-  const { title, position } = req.body;
+  const { title, position, wip_limit } = req.body;
   const boardId = req.params.id;
 
   if (!title && (position === undefined || position === null)) {
@@ -108,13 +111,14 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     const newTitle = title ? title.trim() : board.title;
     const newPosition = position !== undefined && position !== null ? position : board.position;
+    const newWip = wip_limit !== undefined ? wip_limit : board.wip_limit;
 
     const updated = await pool.query(
       `UPDATE boards
-       SET title = $1, position = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       SET title = $1, position = $2, wip_limit = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
        RETURNING *`,
-      [newTitle, newPosition, boardId]
+      [newTitle, newPosition, newWip, boardId]
     );
 
     try {
@@ -187,6 +191,67 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Klaida trinant stulpelį:', error);
     res.status(500).json({ message: 'Klaida trinant stulpelį' });
+  }
+});
+
+// Archyvuoti / atarchyvuoti lentą (soft delete)
+router.patch('/:id/archive', authMiddleware, async (req, res) => {
+  const boardId = req.params.id;
+  const { archived = true } = req.body;
+  try {
+    const boardResult = await pool.query(
+      'SELECT id, project_id, team_id FROM boards WHERE id = $1',
+      [boardId]
+    );
+    if (boardResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Stulpelis nerastas' });
+    }
+    const board = boardResult.rows[0];
+
+    // Access check
+    if (board.project_id) {
+      const access = await pool.query(
+        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        [board.project_id, req.user.id]
+      );
+      if (access.rows.length === 0) {
+        return res.status(403).json({ message: 'Jūs neturite prieigos prie šio projekto' });
+      }
+    }
+    if (board.team_id) {
+      const team = await pool.query('SELECT created_by FROM teams WHERE id = $1', [board.team_id]);
+      if (team.rows.length === 0) {
+        return res.status(404).json({ message: 'Komanda nerasta' });
+      }
+      if (team.rows[0].created_by !== req.user.id) {
+        return res.status(403).json({ message: 'Neturite teisės archyvuoti šios lentos' });
+      }
+    }
+
+    const updated = await pool.query(
+      'UPDATE boards SET archived = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+      [archived, boardId]
+    );
+
+    // Kaskadiškai archyvuoti/unarchive tasks tame board
+    await pool.query('UPDATE tasks SET archived = $1 WHERE board_id = $2', [archived, boardId]);
+
+    try {
+      await logAudit({
+        user_id: req.user.id,
+        action: archived ? 'archive_board' : 'unarchive_board',
+        entity_type: 'board',
+        entity_id: boardId,
+        details: { project_id: board.project_id, team_id: board.team_id }
+      });
+    } catch (auditErr) {
+      console.warn('Audit failed', auditErr);
+    }
+
+    res.json(updated.rows[0]);
+  } catch (error) {
+    console.error('Klaida archyvuojant stulpelį:', error);
+    res.status(500).json({ message: 'Klaida archyvuojant stulpelį' });
   }
 });
 

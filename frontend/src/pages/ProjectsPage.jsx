@@ -15,6 +15,13 @@ export default function ProjectsPage() {
       return [];
     }
   });
+  const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    try {
+      return localStorage.getItem('selected-project-id');
+    } catch {
+      return null;
+    }
+  });
   const [selectedProject, setSelectedProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -57,6 +64,22 @@ export default function ProjectsPage() {
       // Paliekame cache, jei toks yra, kad vartotojas matytų bent jau sukurtas komandas
     }
   };
+
+  useEffect(() => {
+    if (!projects || projects.length === 0) return;
+    const storedId = selectedProjectId;
+    if (!storedId) return;
+    const found = projects.find((p) => p.id === storedId);
+    if (found) {
+      setSelectedProject(found);
+    } else {
+      try {
+        localStorage.removeItem('selected-project-id');
+      } catch {}
+      setSelectedProjectId(null);
+      setSelectedProject(null);
+    }
+  }, [projects, selectedProjectId]);
 
   const handleProjectCreated = () => {
     fetchProjects();
@@ -137,7 +160,13 @@ export default function ProjectsPage() {
               <div
                 key={project.id}
                 className={`project-item ${selectedProject?.id === project.id ? 'active' : ''}`}
-                onClick={() => setSelectedProject(project)}
+                onClick={() => {
+                  setSelectedProject(project);
+                  setSelectedProjectId(project.id);
+                  try {
+                    localStorage.setItem('selected-project-id', project.id);
+                  } catch {}
+                }}
               >
                 <div
                   className="project-color"
@@ -155,6 +184,10 @@ export default function ProjectsPage() {
                         setProjects((prev) => prev.filter((p) => p.id !== project.id));
                         if (selectedProject?.id === project.id) {
                           setSelectedProject(null);
+                          setSelectedProjectId(null);
+                          try {
+                            localStorage.removeItem('selected-project-id');
+                          } catch {}
                         }
                       })
                       .catch((err) => {

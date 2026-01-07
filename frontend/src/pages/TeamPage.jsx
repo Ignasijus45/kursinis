@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { teamService } from '../services';
 import ProjectBoard from '../components/ProjectBoard';
 import AuditList from '../components/AuditList';
+import ActivityFeed from '../components/ActivityFeed';
 
 export default function TeamPage() {
   const { teamId } = useParams();
@@ -155,6 +156,7 @@ export default function TeamPage() {
 
               <div className="audit-panel">
                 <AuditList userId={currentUserId} />
+                <ActivityFeed teamId={teamId} />
               </div>
             </div>
           )}

@@ -1,3 +1,16 @@
+:root {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --border: #e5e7eb;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --accent: #0f766e;
+  --accent-strong: #0d5f59;
+  --danger: #e11d48;
+  --radius: 10px;
+  --shadow: 0 16px 50px rgba(15, 17, 21, 0.08);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,9 +18,10 @@
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #f5f5f5;
-  color: #333;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
 }
 
 .container {
@@ -22,22 +36,26 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: radial-gradient(circle at 20% 20%, rgba(15, 118, 110, 0.08), transparent 35%),
+    radial-gradient(circle at 80% 10%, rgba(15, 118, 110, 0.12), transparent 32%),
+    var(--bg);
 }
 
 .login-content {
-  background: white;
+  background: var(--card);
   padding: 40px;
-  border-radius: 10px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  max-width: 400px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  max-width: 420px;
   width: 100%;
   text-align: center;
+  border: 1px solid var(--border);
 }
 
 .login-content h1 {
-  margin-bottom: 30px;
-  color: #667eea;
+  margin-bottom: 24px;
+  color: var(--accent);
+  letter-spacing: -0.02em;
 }
 
 /* Auth Form */
@@ -54,42 +72,44 @@ body {
 
 .auth-form input {
   padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   font-size: 14px;
+  background: #f9fafb;
 }
 
 .auth-form input:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+  background: #fff;
 }
 
 .auth-form button {
   padding: 12px;
   border: none;
-  border-radius: 5px;
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.25s ease;
 }
 
 .auth-form button:first-of-type {
-  background: #667eea;
+  background: var(--accent);
   color: white;
 }
 
 .auth-form button:first-of-type:hover:not(:disabled) {
-  background: #5568d3;
-  transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(15, 118, 110, 0.25);
 }
 
 .auth-form button:last-of-type {
   background: transparent;
-  color: #667eea;
-  border: 1px solid #667eea;
+  color: var(--accent);
+  border: 1px solid var(--accent);
 }
 
 .auth-form button:disabled {
@@ -100,7 +120,7 @@ body {
 .link-button {
   margin-top: 10px;
   background: transparent;
-  color: #667eea;
+  color: var(--accent);
   border: none;
   cursor: pointer;
   text-decoration: underline;
@@ -112,7 +132,7 @@ body {
   padding: 12px;
   background: #fee;
   border: 1px solid #fcc;
-  color: #c00;
+  color: #b91c1c;
   border-radius: 5px;
   font-size: 14px;
 }
@@ -120,7 +140,7 @@ body {
 /* Projects Page */
 .projects-page {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--bg);
 }
 
 .projects-header {
@@ -128,26 +148,28 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  background: #fff;
-  border-bottom: 1px solid #eee;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
 }
 
 .projects-header__title {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-weight: 600;
-  color: #333;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
 
 .projects-header__title small {
   font-weight: 400;
-  color: #666;
+  color: var(--muted);
 }
 
 .logout-button {
   padding: 8px 14px;
-  background: #e53935;
+  background: var(--danger);
   color: #fff;
   border: none;
   border-radius: 4px;
@@ -157,7 +179,7 @@ body {
 }
 
 .logout-button:hover {
-  background: #d32f2f;
+  background: #be123c;
   transform: translateY(-1px);
 }
 
@@ -334,6 +356,121 @@ body {
   gap: 10px;
 }
 
+.activity-feed {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 14px;
+  margin-top: 16px;
+}
+
+.activity-feed ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+
+.activity-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.activity-feed li {
+  border: 1px solid #e4e4e4;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.activity-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.activity-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.activity-details {
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.archived-block,
+.archived-boards {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.archived-block h4,
+.archived-boards h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.archived-block ul,
+.archived-boards ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.archived-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.archived-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.board-actions-header {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.import-board-form {
+  margin: 12px 0;
+  background: #fff;
+  border: 1px solid #eee;
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.import-board-form textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
 .muted {
   color: #777;
 }
@@ -369,16 +506,17 @@ body {
 
 .projects-sidebar {
   width: 300px;
-  background: white;
-  border-right: 1px solid #eee;
+  background: var(--card);
+  border-right: 1px solid var(--border);
   padding: 20px;
   overflow-y: auto;
+  box-shadow: var(--shadow);
 }
 
 .projects-sidebar h2 {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   font-size: 18px;
-  color: #333;
+  color: var(--text);
 }
 
 .projects-main {
@@ -394,9 +532,10 @@ body {
   gap: 12px;
   margin-bottom: 20px;
   padding: 15px;
-  background: #f9f9f9;
-  border-radius: 5px;
-  border: 1px solid #eee;
+  background: var(--card);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
 }
 
 .project-form h2 {
@@ -407,10 +546,11 @@ body {
 .project-form input,
 .project-form textarea {
   padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   font-size: 13px;
   font-family: inherit;
+  background: #f9fafb;
 }
 
 .project-form textarea {
@@ -420,17 +560,17 @@ body {
 
 .project-form button {
   padding: 10px;
-  background: #667eea;
+  background: var(--accent);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
   transition: background 0.2s;
 }
 
 .project-form button:hover {
-  background: #5568d3;
+  background: var(--accent-strong);
 }
 
 /* Projects List */
@@ -445,19 +585,20 @@ body {
   align-items: center;
   gap: 10px;
   padding: 10px;
-  background: #f5f5f5;
-  border-radius: 4px;
+  background: #f9fafb;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  border: 1px solid var(--border);
 }
 
 .project-item:hover {
-  background: #eee;
+  background: #eef2f3;
 }
 
 .project-item.active {
-  background: #e8eaf6;
-  border-left: 3px solid #667eea;
+  background: #e0f2f1;
+  border-left: 3px solid var(--accent);
 }
 
 .project-item .small-btn {
@@ -485,12 +626,14 @@ body {
 }
 
 .board {
-  background: #f5f5f5;
-  border-radius: 5px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 15px;
   min-width: 300px;
   max-height: 600px;
   overflow-y: auto;
+  box-shadow: var(--shadow);
 }
 
 .board-header {
@@ -503,8 +646,8 @@ body {
 .board-header input {
   flex: 1;
   padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .board-header-actions {
@@ -524,16 +667,16 @@ body {
 .board h2 {
   margin-bottom: 15px;
   font-size: 16px;
-  color: #333;
+  color: var(--text);
 }
 
 .task-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   padding: 10px;
   margin-bottom: 12px;
 }
@@ -541,19 +684,20 @@ body {
 .task-form input,
 .task-form textarea {
   padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
   font-size: 13px;
   font-family: inherit;
+  background: #f9fafb;
 }
 
 .task-form button {
   align-self: flex-start;
   padding: 8px 12px;
-  background: #667eea;
+  background: var(--accent);
   color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
 }
@@ -570,13 +714,13 @@ body {
 }
 
 .task-card {
-  background: white;
+  background: var(--card);
   padding: 12px;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
   cursor: pointer;
   transition: all 0.2s;
-}
+  }
 
 .task-card:hover {
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);

@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS boards (
   team_id UUID,
   title VARCHAR(255) NOT NULL,
   position INT DEFAULT 0,
+  wip_limit INT,
+  archived BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -103,6 +105,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   status VARCHAR(50) DEFAULT 'todo',
   due_date DATE,
   deadline TIMESTAMP,
+  archived BOOLEAN DEFAULT FALSE,
   created_by UUID NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -179,6 +182,13 @@ ALTER TABLE boards ALTER COLUMN project_id DROP NOT NULL;
 
 -- Add deadline to tasks (idempotent)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline TIMESTAMP;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE;
+ALTER TABLE boards ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE;
+ALTER TABLE boards ADD COLUMN IF NOT EXISTS wip_limit INT;
+
+CREATE INDEX IF NOT EXISTS idx_boards_archived ON boards(archived);
+CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
+CREATE INDEX IF NOT EXISTS idx_boards_wip_limit ON boards(wip_limit);
 `;
 
 // Initialize database
